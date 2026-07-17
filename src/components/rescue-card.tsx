@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDialKit } from "dialkit";
-import { Expand, Minus, Plus } from "lucide-react";
+import { Expand, Minus, Plus, Shrink } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   type Account,
@@ -288,9 +288,10 @@ export function RescueCard({
                   event.stopPropagation();
                   closeMap();
                 }}
-                className="absolute right-3.5 top-3.5 z-20 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground shadow-sm"
+                className="absolute right-3.5 top-3.5 z-20 inline-flex h-7 items-center gap-1 rounded-md border border-border bg-card px-2 text-[11px] font-semibold text-foreground shadow-sm"
               >
                 Minimize
+                <Shrink className="size-3" strokeWidth={2.25} aria-hidden />
               </motion.button>
 
               <motion.div
@@ -298,7 +299,7 @@ export function RescueCard({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 transition={MAP_BODY.spring}
-                className="absolute left-3.5 top-3.5 z-20 flex flex-row overflow-hidden rounded-lg border border-border bg-card shadow-sm"
+                className="absolute left-3.5 top-3.5 z-20 flex h-7 flex-row overflow-hidden rounded-md border border-border bg-card shadow-sm"
               >
                 <button
                   type="button"
@@ -308,11 +309,11 @@ export function RescueCard({
                     event.stopPropagation();
                     zoomOut();
                   }}
-                  className="flex size-9 items-center justify-center text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex h-full w-7 items-center justify-center text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  <Minus className="size-4" strokeWidth={2.25} />
+                  <Minus className="size-3.5" strokeWidth={2.25} />
                 </button>
-                <div className="h-9 w-px bg-border" />
+                <div className="h-full w-px bg-border" />
                 <button
                   type="button"
                   aria-label="Zoom in"
@@ -321,9 +322,9 @@ export function RescueCard({
                     event.stopPropagation();
                     zoomIn();
                   }}
-                  className="flex size-9 items-center justify-center text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex h-full w-7 items-center justify-center text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  <Plus className="size-4" strokeWidth={2.25} />
+                  <Plus className="size-3.5" strokeWidth={2.25} />
                 </button>
               </motion.div>
 
@@ -349,9 +350,9 @@ export function RescueCard({
                   }}
                   exit={{ opacity: 0, y: 8 }}
                   transition={MAP_SHEET.spring}
-                  className="rounded-lg border border-border bg-card px-2.5 py-1.5 shadow-sm"
+                  className="rounded-md border border-border bg-card px-2 py-1 shadow-sm"
                 >
-                  <span className="text-[11px] font-semibold text-foreground">
+                  <span className="text-[11px] font-semibold leading-none text-foreground">
                     {account.mapLabel}
                   </span>
                 </motion.div>
@@ -365,10 +366,10 @@ export function RescueCard({
                 }}
                 exit={{ opacity: 0, y: MAP_SHEET.offsetY }}
                 transition={MAP_SHEET.spring}
-                className="absolute bottom-3.5 left-3.5 right-3.5 z-20 flex flex-col gap-3 rounded-lg border border-border bg-card px-[18px] py-4 shadow-sm"
+                className="absolute bottom-3.5 left-3.5 right-3.5 z-20 flex flex-col gap-1.5 rounded-lg border border-border bg-card px-3.5 pb-3 pt-2.5 shadow-sm"
               >
                 <span
-                  className="text-lg font-bold tracking-[-0.015em] text-foreground"
+                  className="text-lg font-bold leading-tight tracking-[-0.015em] text-foreground"
                   style={{ fontFamily: "var(--font-display)" }}
                 >
                   {account.address}
@@ -391,7 +392,7 @@ export function RescueCard({
             exit={{ opacity: 0, y: 8 }}
             transition={MAP_BODY.spring}
           >
-            <div className="flex flex-col gap-3 px-6 pb-3 pt-4">
+            <div className="flex flex-col gap-3 px-6 pb-4 pt-4">
               <h2
                 className="text-[22px] font-bold leading-[1.25] tracking-[-0.02em] text-foreground"
                 style={{ fontFamily: "var(--font-display)" }}
@@ -404,65 +405,67 @@ export function RescueCard({
               </p>
 
               <span className={riskTextClass}>{account.riskLabel}</span>
+            </div>
 
+            <div className="flex flex-col border-t border-border px-6 pb-3 pt-2">
               <RecommendedAction
                 expanded={expanded}
                 onDetails={expanded ? onCollapse : onExpand}
               />
-            </div>
 
-            <AnimatePresence initial={false}>
-              {expanded ? (
-                <motion.div
-                  key="expanded"
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={dial.expandSpring as typeof EXPAND.spring}
-                  className="overflow-hidden"
-                >
-                  <div className="flex flex-col gap-4 px-6 pb-4 pt-2">
-                    <motion.section
-                      initial={{ opacity: 0, y: dial.sectionOffsetY }}
-                      animate={{
-                        opacity: showWhy ? 1 : 0,
-                        y: showWhy ? 0 : dial.sectionOffsetY,
-                      }}
-                      transition={dial.sectionSpring as typeof SECTION.spring}
-                      className="flex flex-col gap-3"
-                    >
-                      <AccountSnapshot
+              <AnimatePresence initial={false}>
+                {expanded ? (
+                  <motion.div
+                    key="expanded"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={dial.expandSpring as typeof EXPAND.spring}
+                    className="overflow-hidden"
+                  >
+                    <div className="flex flex-col gap-4 pb-1 pt-3">
+                      <motion.section
+                        initial={{ opacity: 0, y: dial.sectionOffsetY }}
+                        animate={{
+                          opacity: showWhy ? 1 : 0,
+                          y: showWhy ? 0 : dial.sectionOffsetY,
+                        }}
+                        transition={dial.sectionSpring as typeof SECTION.spring}
+                        className="flex flex-col gap-3"
+                      >
+                        <AccountSnapshot
+                          account={account}
+                          variant="expanded"
+                        />
+                      </motion.section>
+
+                      <RescuePaths
                         account={account}
-                        variant="expanded"
+                        paths={account.paths}
+                        selectedId={selectedPath}
+                        startedId={startedPath}
+                        onSelect={handleSelectPath}
+                        onStart={handleStartPath}
+                        onBack={() => setStartedPath(null)}
+                        onSaveNote={(pathId, noteText) => {
+                          onSaveNote(pathId, noteText);
+                          setStartedPath(null);
+                          setSelectedPath(null);
+                        }}
+                        onSkip={() => handleExit(onSkip)}
+                        onNoteAndFollowUp={(pathId, noteText, followUpIn) =>
+                          handleExit(() =>
+                            onNoteAndFollowUp(pathId, noteText, followUpIn),
+                          )
+                        }
+                        visible={showPaths}
+                        stagger={dial.pathStagger}
                       />
-                    </motion.section>
-
-                    <RescuePaths
-                      account={account}
-                      paths={account.paths}
-                      selectedId={selectedPath}
-                      startedId={startedPath}
-                      onSelect={handleSelectPath}
-                      onStart={handleStartPath}
-                      onBack={() => setStartedPath(null)}
-                      onSaveNote={(pathId, noteText) => {
-                        onSaveNote(pathId, noteText);
-                        setStartedPath(null);
-                        setSelectedPath(null);
-                      }}
-                      onSkip={() => handleExit(onSkip)}
-                      onNoteAndFollowUp={(pathId, noteText, followUpIn) =>
-                        handleExit(() =>
-                          onNoteAndFollowUp(pathId, noteText, followUpIn),
-                        )
-                      }
-                      visible={showPaths}
-                      stagger={dial.pathStagger}
-                    />
-                  </div>
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
+                    </div>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </div>
           </motion.div>
         ) : null}
       </AnimatePresence>
