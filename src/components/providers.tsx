@@ -10,7 +10,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       {children}
       <Toaster position="bottom-center" richColors closeButton />
       {process.env.NODE_ENV === "development" ? (
-        <DialRoot position="top-right" />
+        <DialRoot position="top-right" defaultOpen={false} />
       ) : null}
     </>
   );
