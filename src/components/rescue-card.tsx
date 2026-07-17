@@ -407,7 +407,7 @@ export function RescueCard({
               <span className={riskTextClass}>{account.riskLabel}</span>
             </div>
 
-            <div className="flex flex-col border-t border-border px-6 pb-3 pt-2">
+            <div className="flex flex-col border-t border-border px-6 pb-3 pt-3">
               <RecommendedAction
                 expanded={expanded}
                 onDetails={expanded ? onCollapse : onExpand}
