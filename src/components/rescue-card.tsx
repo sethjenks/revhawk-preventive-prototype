@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useDialKit } from "dialkit";
-import { Minus, Plus } from "lucide-react";
+import { Expand, Minus, Plus } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   type Account,
@@ -262,9 +262,17 @@ export function RescueCard({
         </button>
 
         {!mapOpen ? (
-          <span className="pointer-events-none absolute right-4 top-4 max-w-[40%] rounded-md border border-border bg-card px-2.5 py-1 text-right text-[13px] font-semibold leading-snug text-foreground opacity-0 shadow-sm transition-opacity duration-200 group-hover:opacity-100">
-            {account.address}
-          </span>
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+            <div className="flex flex-row overflow-hidden rounded-md border border-border bg-card/95 shadow-sm">
+              <span className="px-2.5 py-1 text-[13px] font-semibold leading-snug text-foreground">
+                {account.address}
+              </span>
+              <div className="w-px self-stretch bg-border" />
+              <span className="flex items-center justify-center px-2 text-foreground/45">
+                <Expand className="size-3.5" strokeWidth={2.25} aria-hidden />
+              </span>
+            </div>
+          </div>
         ) : null}
 
         <AnimatePresence>

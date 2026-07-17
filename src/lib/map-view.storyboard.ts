@@ -3,7 +3,7 @@
  *
  *    0ms   Map strip clicked
  *    0ms   card body content begins fading out
- *   80ms   map height eases open (88 → ~420)
+ *   80ms   map height eases open (64 → ~420)
  *  200ms   pin pops (snappy spring)
  *  280ms   callout + bottom sheet slide up
  *
@@ -28,7 +28,7 @@ export const MAP_CLOSE_TIMING = {
 };
 
 export const MAP_HEIGHT = {
-  collapsed: 88,
+  collapsed: 64,
   expanded: 420,
   spring: { type: "spring" as const, stiffness: 320, damping: 32 },
 };
