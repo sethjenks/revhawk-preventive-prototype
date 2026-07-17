@@ -4,7 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useDialKit } from "dialkit";
 import { Minus, Plus } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import type { Account, RescuePath } from "@/lib/accounts";
+import {
+  type Account,
+  type RescuePath,
+} from "@/lib/accounts";
 import {
   EXIT,
   EXIT_TIMING,
@@ -25,10 +28,11 @@ import {
   MapStage,
   type MapStageValue,
 } from "@/lib/map-view.storyboard";
+import { AccountSnapshot } from "@/components/account-snapshot";
 import { RecommendedAction } from "@/components/recommended-action";
 import {
   RescuePaths,
-  type ResurfaceIn,
+  type FollowUpIn,
 } from "@/components/rescue-paths";
 
 const MAP_ZOOM = {
@@ -44,12 +48,12 @@ type RescueCardProps = {
   onExpand: () => void;
   onCollapse: () => void;
   onStartPath: (pathId: RescuePath["id"]) => void;
-  onLogOutreach: (pathId: RescuePath["id"]) => void;
+  onSaveNote: (pathId: RescuePath["id"], noteText: string) => void;
   onSkip: () => void;
-  onNoteAndResurface: (
+  onNoteAndFollowUp: (
     pathId: RescuePath["id"],
-    note: string,
-    resurfaceIn: ResurfaceIn,
+    noteText: string,
+    followUpIn: FollowUpIn,
   ) => void;
 };
 
@@ -59,9 +63,9 @@ export function RescueCard({
   onExpand,
   onCollapse,
   onStartPath,
-  onLogOutreach,
+  onSaveNote,
   onSkip,
-  onNoteAndResurface,
+  onNoteAndFollowUp,
 }: RescueCardProps) {
   const dial = useDialKit("RescueCard", {
     expandWhyMs: [0, EXPAND_TIMING.why, 800, 10],
@@ -71,9 +75,6 @@ export function RescueCard({
     sectionSpring: SECTION.spring,
     expandSpring: EXPAND.spring,
   });
-
-  const recommendedId =
-    account.paths.find((p) => p.recommended)?.id ?? account.paths[0]?.id ?? "A";
 
   const cardRef = useRef<HTMLElement>(null);
   const [stage, setStage] = useState<ExpandStageValue>(ExpandStage.Idle);
@@ -85,36 +86,33 @@ export function RescueCard({
   const [mapOpen, setMapOpen] = useState(false);
   const [mapStage, setMapStage] = useState<MapStageValue>(MapStage.Idle);
   const [mapZoom, setMapZoom] = useState<number>(MAP_ZOOM.default);
-  const prevExpanded = useRef(expanded);
+  const [trackedExpanded, setTrackedExpanded] = useState(expanded);
 
-  useEffect(() => {
-    const timers: ReturnType<typeof setTimeout>[] = [];
-
-    if (expanded && !prevExpanded.current && !mapOpen) {
-      setStage(ExpandStage.Layout);
-      timers.push(
-        setTimeout(() => setStage(ExpandStage.Why), dial.expandWhyMs),
-      );
-      timers.push(
-        setTimeout(() => setStage(ExpandStage.Paths), dial.expandPathsMs),
-      );
-    } else if (!expanded) {
+  if (expanded !== trackedExpanded) {
+    setTrackedExpanded(expanded);
+    if (!expanded) {
       setStage(ExpandStage.Idle);
       setSelectedPath(null);
       setStartedPath(null);
+    } else if (!mapOpen) {
+      setStage(ExpandStage.Layout);
     }
+  }
 
-    prevExpanded.current = expanded;
+  useEffect(() => {
+    if (!expanded || mapOpen) return;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    timers.push(
+      setTimeout(() => setStage(ExpandStage.Why), dial.expandWhyMs),
+    );
+    timers.push(
+      setTimeout(() => setStage(ExpandStage.Paths), dial.expandPathsMs),
+    );
     return () => timers.forEach(clearTimeout);
   }, [expanded, dial.expandWhyMs, dial.expandPathsMs, mapOpen]);
 
   useEffect(() => {
-    if (!mapOpen) {
-      setMapStage(MapStage.Idle);
-      return;
-    }
-
-    setMapStage(MapStage.Morphing);
+    if (!mapOpen) return;
     const timers: ReturnType<typeof setTimeout>[] = [];
     timers.push(
       setTimeout(() => setMapStage(MapStage.Pin), MAP_OPEN_TIMING.pin),
@@ -146,15 +144,9 @@ export function RescueCard({
     onStartPath(id);
   };
 
-  const handleRecommendedStart = () => {
-    if (!expanded) onExpand();
-    setSelectedPath(recommendedId);
-    setStartedPath(recommendedId);
-    onStartPath(recommendedId);
-  };
-
   const openMap = () => {
     setMapZoom(MAP_ZOOM.default);
+    setMapStage(MapStage.Morphing);
     setMapOpen(true);
   };
 
@@ -201,26 +193,12 @@ export function RescueCard({
     };
   }, [mapOpen, closeMap]);
 
-  const startFromMap = () => {
-    setMapOpen(false);
-    setMapStage(MapStage.Idle);
-    if (!expanded) onExpand();
-    setSelectedPath(recommendedId);
-    setStartedPath(recommendedId);
-    onStartPath(recommendedId);
-  };
-
-  const riskBadgeClass =
+  const riskTextClass =
     account.risk === "critical"
-      ? "rounded-md border border-destructive/20 bg-card px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-destructive shadow-sm"
+      ? "text-[11px] font-bold uppercase tracking-[0.08em] text-destructive"
       : account.risk === "high"
-        ? "rounded-md border border-amber-500/25 bg-card px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-amber-700 shadow-sm"
-        : "rounded-md border border-border bg-card px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground shadow-sm";
-
-  const riskLabel =
-    account.risk === "critical" && account.daysLeft != null
-      ? `Critical · ${account.daysLeft} days`
-      : `${account.risk} · ${account.score}`;
+        ? "text-[11px] font-bold uppercase tracking-[0.08em] text-amber-700"
+        : "text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground";
 
   return (
     <motion.article
@@ -233,7 +211,7 @@ export function RescueCard({
           : { opacity: 1, y: 0 }
       }
       transition={EXIT.spring}
-      className="overflow-hidden rounded-xl border border-border bg-card"
+      className="overflow-hidden rounded-2xl border border-border bg-card"
     >
       <motion.div
         layout
@@ -284,14 +262,9 @@ export function RescueCard({
         </button>
 
         {!mapOpen ? (
-          <>
-            <span className={`pointer-events-none absolute left-4 top-4 ${riskBadgeClass}`}>
-              {riskLabel}
-            </span>
-            <span className="pointer-events-none absolute right-4 top-4 max-w-[55%] rounded-md border border-border bg-card px-2.5 py-1 text-right text-[13px] font-semibold leading-snug text-foreground opacity-0 shadow-sm transition-opacity duration-200 group-hover:opacity-100">
-              {account.address}
-            </span>
-          </>
+          <span className="pointer-events-none absolute right-4 top-4 max-w-[40%] rounded-md border border-border bg-card px-2.5 py-1 text-right text-[13px] font-semibold leading-snug text-foreground opacity-0 shadow-sm transition-opacity duration-200 group-hover:opacity-100">
+            {account.address}
+          </span>
         ) : null}
 
         <AnimatePresence>
@@ -359,20 +332,22 @@ export function RescueCard({
                 className="pointer-events-none absolute left-[47%] top-[36%] z-20 size-[18px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-white bg-destructive"
               />
 
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{
-                  opacity: sheetVisible ? 1 : 0,
-                  y: sheetVisible ? 0 : 8,
-                }}
-                exit={{ opacity: 0, y: 8 }}
-                transition={MAP_SHEET.spring}
-                className="pointer-events-none absolute left-[56%] top-[30%] z-20 rounded-lg border border-border bg-card px-2.5 py-1.5 shadow-sm"
-              >
-                <span className="text-[11px] font-semibold text-foreground">
-                  {account.mapLabel}
-                </span>
-              </motion.div>
+              <div className="pointer-events-none absolute left-[47%] top-[36%] z-20 -translate-x-1/2 -translate-y-[calc(100%+12px)]">
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{
+                    opacity: sheetVisible ? 1 : 0,
+                    y: sheetVisible ? 0 : 8,
+                  }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={MAP_SHEET.spring}
+                  className="rounded-lg border border-border bg-card px-2.5 py-1.5 shadow-sm"
+                >
+                  <span className="text-[11px] font-semibold text-foreground">
+                    {account.mapLabel}
+                  </span>
+                </motion.div>
+              </div>
 
               <motion.div
                 initial={{ opacity: 0, y: MAP_SHEET.offsetY }}
@@ -382,39 +357,17 @@ export function RescueCard({
                 }}
                 exit={{ opacity: 0, y: MAP_SHEET.offsetY }}
                 transition={MAP_SHEET.spring}
-                className="absolute bottom-3.5 left-3.5 right-3.5 z-20 flex flex-col gap-3 rounded-xl border border-border bg-card px-[18px] py-4 shadow-sm"
+                className="absolute bottom-3.5 left-3.5 right-3.5 z-20 flex flex-col gap-3 rounded-lg border border-border bg-card px-[18px] py-4 shadow-sm"
               >
-                <div className="flex items-center justify-between gap-3">
-                  <span
-                    className="text-lg font-bold tracking-[-0.015em] text-foreground"
-                    style={{ fontFamily: "var(--font-display)" }}
-                  >
-                    {account.address}
-                  </span>
-                  <span className={riskBadgeClass}>{riskLabel}</span>
-                </div>
+                <span
+                  className="text-lg font-bold tracking-[-0.015em] text-foreground"
+                  style={{ fontFamily: "var(--font-display)" }}
+                >
+                  {account.address}
+                </span>
                 <p className="text-[13px] leading-[19px] text-muted-foreground">
                   {account.mapNote}
                 </p>
-                <div className="flex items-center gap-2.5">
-                  <button
-                    type="button"
-                    onClick={startFromMap}
-                    className="rounded-lg bg-primary px-3.5 py-2.5 text-[13px] font-bold text-primary-foreground"
-                  >
-                    Start the rescue →
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      closeMap();
-                    }}
-                    className="px-2 py-2.5 text-[13px] font-medium text-muted-foreground"
-                  >
-                    Minimize
-                  </button>
-                </div>
               </motion.div>
             </>
           ) : null}
@@ -430,7 +383,7 @@ export function RescueCard({
             exit={{ opacity: 0, y: 8 }}
             transition={MAP_BODY.spring}
           >
-            <div className="flex flex-col gap-3 px-6 pb-6 pt-4">
+            <div className="flex flex-col gap-3 px-6 pb-3 pt-4">
               <h2
                 className="text-[22px] font-bold leading-[1.25] tracking-[-0.02em] text-foreground"
                 style={{ fontFamily: "var(--font-display)" }}
@@ -438,13 +391,15 @@ export function RescueCard({
                 {account.headline}
               </h2>
 
+              <p className="text-[14px] leading-[21px] text-muted-foreground">
+                {account.summary}
+              </p>
+
+              <span className={riskTextClass}>{account.riskLabel}</span>
+
               <RecommendedAction
-                title={account.recommended.title}
-                saveRate={account.recommended.saveRate}
-                costLabel={account.recommended.costLabel}
                 expanded={expanded}
                 onDetails={expanded ? onCollapse : onExpand}
-                onStart={handleRecommendedStart}
               />
             </div>
 
@@ -466,50 +421,31 @@ export function RescueCard({
                         y: showWhy ? 0 : dial.sectionOffsetY,
                       }}
                       transition={dial.sectionSpring as typeof SECTION.spring}
-                      className="flex flex-col gap-2"
+                      className="flex flex-col gap-3"
                     >
-                      <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-                        Why this surfaced
-                      </span>
-                      <ul className="flex flex-col gap-1.5">
-                        {account.why.map((item) => (
-                          <li
-                            key={`${item.date}-${item.text}`}
-                            className="flex gap-2 text-[13px] leading-[19px]"
-                          >
-                            <span className="shrink-0 font-semibold text-muted-foreground">
-                              {item.date}
-                            </span>
-                            <span
-                              className={
-                                item.emphasize
-                                  ? "font-medium text-foreground"
-                                  : "text-foreground"
-                              }
-                            >
-                              {item.text}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
+                      <AccountSnapshot
+                        account={account}
+                        variant="expanded"
+                      />
                     </motion.section>
 
                     <RescuePaths
+                      account={account}
                       paths={account.paths}
                       selectedId={selectedPath}
                       startedId={startedPath}
                       onSelect={handleSelectPath}
                       onStart={handleStartPath}
                       onBack={() => setStartedPath(null)}
-                      onLogOutreach={(pathId) => {
-                        onLogOutreach(pathId);
+                      onSaveNote={(pathId, noteText) => {
+                        onSaveNote(pathId, noteText);
                         setStartedPath(null);
                         setSelectedPath(null);
                       }}
                       onSkip={() => handleExit(onSkip)}
-                      onNoteAndResurface={(pathId, note, resurfaceIn) =>
+                      onNoteAndFollowUp={(pathId, noteText, followUpIn) =>
                         handleExit(() =>
-                          onNoteAndResurface(pathId, note, resurfaceIn),
+                          onNoteAndFollowUp(pathId, noteText, followUpIn),
                         )
                       }
                       visible={showPaths}

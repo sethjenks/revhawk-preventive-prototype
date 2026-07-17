@@ -4,16 +4,9 @@ import { useState } from "react";
 import { AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import { ACCOUNTS, type Account, type RescuePath } from "@/lib/accounts";
+import { FOLLOW_UP_LABELS, type FollowUpIn } from "@/lib/fieldroutes-note";
 import { OutreachHeader } from "@/components/outreach-header";
 import { RescueCard } from "@/components/rescue-card";
-import type { ResurfaceIn } from "@/components/rescue-paths";
-
-const RESURFACE_LABELS: Record<ResurfaceIn, string> = {
-  "1d": "tomorrow",
-  "3d": "in 3 days",
-  "7d": "in 7 days",
-  "14d": "in 14 days",
-};
 
 export function OutreachQueue() {
   const [accounts, setAccounts] = useState<Account[]>(ACCOUNTS);
@@ -32,13 +25,18 @@ export function OutreachQueue() {
     setExpandedId(account.id);
   };
 
-  const handleLogOutreach = (account: Account, pathId: RescuePath["id"]) => {
+  const handleSaveNote = (
+    account: Account,
+    pathId: RescuePath["id"],
+    noteText: string,
+  ) => {
     const path = account.paths.find((p) => p.id === pathId);
     const schedulesCheckIn = path?.steps?.some((step) => step.schedulesCheckIn);
     toast.success(
       schedulesCheckIn
-        ? `Outreach logged · check-in scheduled · ${account.name}`
-        : `Outreach logged · ${path?.title ?? pathId} · ${account.name}`,
+        ? `Saved to FieldRoutes · check-in scheduled · ${account.name}`
+        : `Saved to FieldRoutes · ${path?.title ?? pathId} · ${account.name}`,
+      { description: noteText.slice(0, 140) },
     );
     setExpandedId(null);
   };
@@ -48,19 +46,19 @@ export function OutreachQueue() {
     removeAccount(account.id);
   };
 
-  const handleNoteAndResurface = (
+  const handleNoteAndFollowUp = (
     account: Account,
     pathId: RescuePath["id"],
-    note: string,
-    resurfaceIn: ResurfaceIn,
+    noteText: string,
+    followUpIn: FollowUpIn,
   ) => {
     const path = account.paths.find((p) => p.id === pathId);
-    const when = RESURFACE_LABELS[resurfaceIn];
+    const when = FOLLOW_UP_LABELS[followUpIn];
     toast.message(
-      note
-        ? `Will resurface ${when} · ${account.name}`
-        : `Queued to resurface ${when} · ${path?.title ?? pathId}`,
-      note ? { description: note } : undefined,
+      noteText
+        ? `Follow-up scheduled ${when} · ${account.name}`
+        : `Queued for follow-up ${when} · ${path?.title ?? pathId}`,
+      noteText ? { description: noteText.slice(0, 140) } : undefined,
     );
     removeAccount(account.id);
   };
@@ -78,10 +76,12 @@ export function OutreachQueue() {
               onExpand={() => setExpandedId(account.id)}
               onCollapse={() => setExpandedId(null)}
               onStartPath={(pathId) => handleStartPath(account, pathId)}
-              onLogOutreach={(pathId) => handleLogOutreach(account, pathId)}
+              onSaveNote={(pathId, noteText) =>
+                handleSaveNote(account, pathId, noteText)
+              }
               onSkip={() => handleSkip(account)}
-              onNoteAndResurface={(pathId, note, resurfaceIn) =>
-                handleNoteAndResurface(account, pathId, note, resurfaceIn)
+              onNoteAndFollowUp={(pathId, noteText, followUpIn) =>
+                handleNoteAndFollowUp(account, pathId, noteText, followUpIn)
               }
             />
           ))}

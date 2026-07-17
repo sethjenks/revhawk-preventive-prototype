@@ -1,5 +1,28 @@
 export type RiskLevel = "critical" | "high" | "moderate";
 
+export type PestType = "ants" | "roaches" | "other";
+
+export type PestActivityLevel = "low" | "moderate" | "high";
+
+export type PestActivity = {
+  pest: PestType;
+  activity: PestActivityLevel;
+};
+
+export type CadenceStatus =
+  | "on_track"
+  | "overdue"
+  | "quarter_ending"
+  | "over_a_quarter";
+
+export type DiscountOffer = {
+  /** Percent of annual value, typically 10 */
+  percent: number;
+  /** True when deeper than 10% — requires manager approval */
+  requiresManagerApproval?: boolean;
+  label: string;
+};
+
 export type RescueStep = {
   text: string;
   /** Completing this step is bundled into the primary CTA (schedule check-in) */
@@ -9,26 +32,32 @@ export type RescueStep = {
 export type RescuePath = {
   id: "A" | "B" | "C";
   title: string;
-  saveRate: number;
-  costLabel: string;
+  /** Estimated likelihood of retaining the customer (0–100) */
+  retentionLikelihood: number;
   recommended?: boolean;
   /** Short line shown when the path is selected (before Start) */
   summary?: string;
-  /** Checklist revealed after Start */
+  /** Checklist revealed after Start — CS/outreach only, never tech execution */
   steps?: RescueStep[];
-  /** Opening script — only shown after Start when present */
-  script?: string;
+  /** Example conversation opener — shown after Start when present */
+  conversationStarter?: string;
   /** Primary disposition button label after Start */
   ctaLabel?: string;
   riskEmphasis?: boolean;
+  /** Optional discount; free-first paths omit this */
+  discount?: DiscountOffer;
 };
 
 export function pathCtaLabel(path: RescuePath): string {
   if (path.ctaLabel) return path.ctaLabel;
   if (path.steps?.some((step) => step.schedulesCheckIn)) {
-    return "Log outreach and schedule check-in";
+    return "Preview FieldRoutes note & schedule check-in";
   }
-  return "Log outreach";
+  return "Preview FieldRoutes note";
+}
+
+export function retentionLikelihoodLabel(percent: number): string {
+  return `Estimated ${percent}% likelihood of retaining this customer`;
 }
 
 export type WhySignal = {
@@ -37,13 +66,26 @@ export type WhySignal = {
   emphasize?: boolean;
 };
 
+export type ServiceSnapshot = {
+  recentServiceCount: number;
+  recentServiceWindowDays: number;
+  daysSinceLastService: number;
+  pestActivityNote: string;
+  contractCadence: string;
+  cadenceStatus: CadenceStatus;
+  cadenceLabel: string;
+};
+
 export type Account = {
   id: string;
   name: string;
   email: string;
+  phone: string;
   risk: RiskLevel;
   score: number;
   daysLeft?: number;
+  /** Plain-language risk badge, e.g. "Critical · likely to cancel within 30 days" */
+  riskLabel: string;
   headline: string;
   summary: string;
   valueLabel: string;
@@ -55,26 +97,39 @@ export type Account = {
   mapLabel: string;
   address: string;
   mapNote: string;
+  /** Deep link to this customer's FieldRoutes account */
+  fieldRoutesUrl: string;
+  service: ServiceSnapshot;
+  pestActivities: PestActivity[];
+  /** Summarized complaint history when present */
+  complaintSummary?: string;
+  /** Billing issue when present, e.g. failed card */
+  billingIssue?: string;
   why: WhySignal[];
   paths: RescuePath[];
-  recommended: {
-    title: string;
-    saveRate: number;
-    costLabel: string;
-  };
+  recommendedPathId: RescuePath["id"];
 };
+
+export function recommendedPath(account: Account): RescuePath {
+  return (
+    account.paths.find((p) => p.id === account.recommendedPathId) ??
+    account.paths[0]
+  );
+}
 
 export const ACCOUNTS: Account[] = [
   {
     id: "hernandez",
     name: "Hernandez Residence",
     email: "j.hernandez@example.com",
+    phone: "(512) 555-0142",
     risk: "critical",
     score: 86,
     daysLeft: 45,
+    riskLabel: "Critical · likely to cancel within 30 days",
     headline: "Hernandez Residence is about to give up on us.",
     summary:
-      "Three failed visits. Maria feels unheard — and accounts like hers cancel within 45 days.",
+      "Maria has called back three times about the same ant issue, and her CSAT dropped from 9 to 4. She says rotating technicians make her feel unheard, putting the account at immediate risk.",
     valueLabel: "$1,240",
     tenureLabel: "14mo",
     agent: null,
@@ -84,8 +139,26 @@ export const ACCOUNTS: Account[] = [
     mapLabel: "1428 Cedar Lane",
     address: "1428 Cedar Lane",
     mapNote:
-      "Hernandez Residence · $1,240/yr · 14 mo. Focus re-inspect on east fence line before next visit.",
+      "Hernandez Residence · $1,240/yr · 14 mo. East fence line ants flagged in tech notes — own the relationship before next visit.",
+    fieldRoutesUrl: "https://fieldroutes.example.com/customers/hernandez-1428",
+    service: {
+      recentServiceCount: 3,
+      recentServiceWindowDays: 30,
+      daysSinceLastService: 19,
+      pestActivityNote:
+        'Tech Marcus T.: "She said we keep sending someone new and nothing changes." Activity high on east fence.',
+      contractCadence: "Monthly",
+      cadenceStatus: "on_track",
+      cadenceLabel: "On monthly cadence",
+    },
+    pestActivities: [{ pest: "ants", activity: "high" }],
+    complaintSummary:
+      "3 callbacks in 30 days for the same ant issue; CSAT fell 9 → 4.",
     why: [
+      {
+        date: "Current",
+        text: "High ant activity remains along the east fence",
+      },
       {
         date: "May 12",
         text: "CSAT fell 9 → 4 — our strongest churn predictor",
@@ -100,47 +173,50 @@ export const ACCOUNTS: Account[] = [
         emphasize: true,
       },
     ],
-    recommended: {
-      title: "Senior tech takeover",
-      saveRate: 78,
-      costLabel: "$180",
-    },
+    recommendedPathId: "A",
     paths: [
       {
         id: "A",
-        title: "Senior tech takeover",
-        saveRate: 78,
-        costLabel: "$180",
+        title: "Dedicated owner + apology outreach",
+        retentionLikelihood: 78,
         recommended: true,
         summary:
-          "Assign Marcus T. to own the east-fence ant issue with a 48-hr follow-up.",
+          "Assign Marcus T. as sole owner, call with full context, and schedule a Day-14 check-in. No tech treatment instructions from this desk.",
         steps: [
-          { text: "Assign Marcus T. as owner — no new techs on this account" },
-          { text: "Re-inspect east fence line on next visit" },
-          { text: "Apply gel + barrier treatment" },
-          { text: "48-hour follow-up call by Marcus" },
+          {
+            text: "Assign Marcus T. as account owner — no rotating techs",
+          },
+          {
+            text: "Log east-fence ant history in FieldRoutes notes for the next visit",
+          },
+          {
+            text: "Call within 24 hours with that context (apology + ownership)",
+          },
           { text: "Day-14 check-in by you", schedulesCheckIn: true },
         ],
-        script:
+        conversationStarter:
           "Mrs. Hernandez, I've read every note from all three visits. You shouldn't have had to explain this three times — so I won't ask you to again.",
       },
       {
         id: "B",
-        title: "Manager call + credit",
-        saveRate: 54,
-        costLabel: "$310",
-        summary: "Manager apology call with a service credit to buy time.",
+        title: "Manager call + 10% goodwill credit",
+        retentionLikelihood: 54,
+        discount: {
+          percent: 10,
+          label: "10% goodwill credit (~$124)",
+        },
+        summary:
+          "Manager apology call with an optional 10% credit to buy time while ownership is fixed.",
         steps: [
           { text: "Manager calls within 24 hours" },
-          { text: "Apply $310 goodwill credit" },
+          { text: "Offer 10% goodwill credit if needed to keep the conversation open" },
           { text: "Confirm next visit window with customer" },
         ],
       },
       {
         id: "C",
         title: "Watch and wait",
-        saveRate: 21,
-        costLabel: "risk $1,240",
+        retentionLikelihood: 21,
         riskEmphasis: true,
         summary: "No outreach now — monitor for further CSAT drop.",
         steps: [
@@ -155,11 +231,14 @@ export const ACCOUNTS: Account[] = [
     id: "blue-ridge",
     name: "Brooks Residence",
     email: "m.brooks@example.com",
+    phone: "(512) 555-0187",
     risk: "high",
     score: 72,
+    daysLeft: 28,
+    riskLabel: "High · likely to cancel within 30 days",
     headline: "Brooks Residence is shopping a competitor quote.",
     summary:
-      "Competitor offer + pricing pushback. Last contact Jul 1 — suggested: Problem Solve.",
+      "Brooks mentioned a competitor quote after pushing back on renewal pricing. No retention offer or follow-up has been logged since July 1.",
     valueLabel: "$1,180",
     tenureLabel: "8mo",
     agent: "Stephanie White",
@@ -169,8 +248,25 @@ export const ACCOUNTS: Account[] = [
     mapLabel: "918 Maple Court",
     address: "918 Maple Court",
     mapNote:
-      "Brooks Residence · $1,180/yr · 8 mo. Competitor quote in play — win back on service.",
+      "Brooks Residence · $1,180/yr · 8 mo. Competitor quote in play — win back on service and relationship.",
+    fieldRoutesUrl: "https://fieldroutes.example.com/customers/brooks-918",
+    service: {
+      recentServiceCount: 2,
+      recentServiceWindowDays: 90,
+      daysSinceLastService: 41,
+      pestActivityNote:
+        "Last tech note: light ant trails near patio; no roach activity.",
+      contractCadence: "Quarterly",
+      cadenceStatus: "quarter_ending",
+      cadenceLabel: "Quarter ending · service due soon",
+    },
+    pestActivities: [{ pest: "ants", activity: "moderate" }],
+    complaintSummary: "Pricing pushback on renewal; competitor quote mentioned.",
     why: [
+      {
+        date: "Current",
+        text: "Moderate ant activity; quarterly service due soon",
+      },
       {
         date: "Jun 22",
         text: "Homeowner referenced a competitor quote on a pricing call",
@@ -185,45 +281,44 @@ export const ACCOUNTS: Account[] = [
         emphasize: true,
       },
     ],
-    recommended: {
-      title: "Competitive match + retention call",
-      saveRate: 64,
-      costLabel: "$120",
-    },
+    recommendedPathId: "A",
     paths: [
       {
         id: "A",
-        title: "Competitive match + retention call",
-        saveRate: 64,
-        costLabel: "$120",
+        title: "Retention call + service differentiators",
+        retentionLikelihood: 64,
         recommended: true,
         summary:
-          "Stephanie matches the competitor quote and walks the service difference.",
+          "Stephanie owns the call, walks service value vs. the competitor, and documents preferences — free-first, no field work from this desk.",
         steps: [
           { text: "Stephanie owns the retention call" },
-          { text: "Match competitor quote for 2 quarters" },
-          { text: "Add quarterly service audit" },
+          {
+            text: "Document service differentiators and customer preferences for the next visit",
+          },
+          { text: "Confirm next visit window preference" },
         ],
-        script:
-          "I saw you mentioned a competitor quote — before you decide, I want to walk through what we'd match and what we'd improve on service, not just price.",
+        conversationStarter:
+          "I saw you mentioned a competitor quote — before you decide, I want to walk through what we'd match on relationship and service, not just price.",
       },
       {
         id: "B",
-        title: "Manager goodwill credit",
-        saveRate: 48,
-        costLabel: "$180",
-        summary: "One-time credit without locking a competitive match.",
+        title: "Manager goodwill + 10% credit",
+        retentionLikelihood: 48,
+        discount: {
+          percent: 10,
+          label: "10% credit (~$118)",
+        },
+        summary: "One-time 10% credit without locking a deep competitive match.",
         steps: [
           { text: "Manager goodwill call" },
-          { text: "Apply $180 credit" },
+          { text: "Offer 10% credit if needed" },
           { text: "Schedule 30-day check-in", schedulesCheckIn: true },
         ],
       },
       {
         id: "C",
         title: "Watch and wait",
-        saveRate: 18,
-        costLabel: "risk $1,180",
+        retentionLikelihood: 18,
         riskEmphasis: true,
         summary: "Hold off — re-engage if renewal window opens.",
         steps: [
@@ -237,11 +332,13 @@ export const ACCOUNTS: Account[] = [
     id: "patel",
     name: "Patel Family",
     email: "r.patel@example.com",
+    phone: "(512) 555-0119",
     risk: "high",
     score: 68,
+    riskLabel: "High · billing friction risking cancel",
     headline: "Patel Family has missed two payments.",
     summary:
-      "Missed payment + late invoice. No recent contact — suggested: Problem Solve.",
+      "Patel's card failed twice, leaving a late quarterly invoice. No one has reached out to learn whether the payment issue is accidental or a sign they may leave.",
     valueLabel: "$890",
     tenureLabel: "22mo",
     agent: null,
@@ -251,7 +348,23 @@ export const ACCOUNTS: Account[] = [
     mapLabel: "610 Briarwood Lane",
     address: "610 Briarwood Lane",
     mapNote: "Patel Family · $890/yr · 22 mo. Long-tenure home · billing friction.",
+    fieldRoutesUrl: "https://fieldroutes.example.com/customers/patel-610",
+    service: {
+      recentServiceCount: 1,
+      recentServiceWindowDays: 90,
+      daysSinceLastService: 78,
+      pestActivityNote: "No pest activity flagged in recent tech notes.",
+      contractCadence: "Quarterly",
+      cadenceStatus: "overdue",
+      cadenceLabel: "Quarterly cadence overdue",
+    },
+    pestActivities: [{ pest: "roaches", activity: "low" }],
+    billingIssue: "Card on file failed twice · late invoice notice sent",
     why: [
+      {
+        date: "Current",
+        text: "Quarterly service overdue",
+      },
       { date: "Jun 10", text: "First missed payment on quarterly plan" },
       { date: "Jun 24", text: "Second missed payment · late invoice notice sent" },
       {
@@ -260,33 +373,27 @@ export const ACCOUNTS: Account[] = [
         emphasize: true,
       },
     ],
-    recommended: {
-      title: "Billing reset + autopay enroll",
-      saveRate: 71,
-      costLabel: "$90",
-    },
+    recommendedPathId: "A",
     paths: [
       {
         id: "A",
         title: "Billing reset + autopay enroll",
-        saveRate: 71,
-        costLabel: "$90",
+        retentionLikelihood: 71,
         recommended: true,
-        summary: "Clear late fees, reset due date, enroll autopay by text.",
+        summary: "Clear late fees, reset due date, enroll autopay by text — no discount required.",
         steps: [
           { text: "Waive late fees" },
           { text: "Set new due date" },
           { text: "Enroll autopay over text" },
-          { text: "Day-7 confirmation" },
+          { text: "Day-7 confirmation call or text" },
         ],
-        script:
+        conversationStarter:
           "I'm calling about the two missed payments — not to pressure you, but to make sure nothing on our side is making this harder than it should be.",
       },
       {
         id: "B",
         title: "Payment plan offer",
-        saveRate: 52,
-        costLabel: "$0 now",
+        retentionLikelihood: 52,
         summary: "Split remaining balance across two cycles.",
         steps: [
           { text: "Offer 2-cycle payment plan" },
@@ -297,8 +404,7 @@ export const ACCOUNTS: Account[] = [
       {
         id: "C",
         title: "Collections path",
-        saveRate: 15,
-        costLabel: "risk $890",
+        retentionLikelihood: 15,
         riskEmphasis: true,
         summary: "Route to collections after one final notice.",
         steps: [
@@ -312,11 +418,13 @@ export const ACCOUNTS: Account[] = [
     id: "sunrise",
     name: "Nguyen Residence",
     email: "a.nguyen@example.com",
+    phone: "(512) 555-0164",
     risk: "high",
     score: 61,
+    riskLabel: "High · unresolved tickets before renewal",
     headline: "Nguyen Residence is stuck in a support backlog.",
     summary:
-      "Support ticket backlog. Last contact Jun 30 — suggested: Lock-in.",
+      "Two scheduling tickets remain unresolved after Devon promised a follow-up. Their renewal is approaching while the account is still stuck in support.",
     valueLabel: "$960",
     tenureLabel: "31mo",
     agent: "Devon Pain",
@@ -327,7 +435,25 @@ export const ACCOUNTS: Account[] = [
     address: "4410 Desert Bloom Rd",
     mapNote:
       "Nguyen Residence · $960/yr · 31 mo. Open scheduling tickets — close before renewal.",
+    fieldRoutesUrl: "https://fieldroutes.example.com/customers/nguyen-4410",
+    service: {
+      recentServiceCount: 2,
+      recentServiceWindowDays: 90,
+      daysSinceLastService: 55,
+      pestActivityNote:
+        "Tech note: recurring ants in kitchen; customer asked for consistent tech.",
+      contractCadence: "Bi-monthly",
+      cadenceStatus: "on_track",
+      cadenceLabel: "On bi-monthly cadence",
+    },
+    pestActivities: [{ pest: "ants", activity: "moderate" }],
+    complaintSummary:
+      "2 open scheduling tickets; customer promised a lock-in follow-up that never landed.",
     why: [
+      {
+        date: "Current",
+        text: "Moderate ant activity continues in the kitchen; customer requested a consistent tech",
+      },
       { date: "Jun 18", text: "Support ticket opened — scheduling conflict" },
       { date: "Jun 25", text: "Second ticket escalated · still unresolved" },
       {
@@ -336,43 +462,43 @@ export const ACCOUNTS: Account[] = [
         emphasize: true,
       },
     ],
-    recommended: {
-      title: "Priority ticket close + lock-in",
-      saveRate: 69,
-      costLabel: "$90",
-    },
+    recommendedPathId: "A",
     paths: [
       {
         id: "A",
-        title: "Priority ticket close + lock-in",
-        saveRate: 69,
-        costLabel: "$90",
+        title: "Priority ticket close + lock-in conversation",
+        retentionLikelihood: 69,
         recommended: true,
-        summary: "Devon closes open tickets, then offers a 12-mo lock-in.",
+        summary:
+          "Devon closes open tickets, assigns a dedicated tech on the next two scheduled visits, then offers a 12-mo lock-in.",
         steps: [
           { text: "Devon closes tickets in 48 hrs" },
-          { text: "Dedicated tech for next 2 visits" },
-          { text: "Present 12-mo lock-in offer" },
+          {
+            text: "Assign dedicated tech on next 2 scheduled visits",
+          },
+          { text: "Present 12-mo lock-in offer on the call" },
         ],
-        script:
+        conversationStarter:
           "Devon asked me to own your open tickets personally — I'm not going to ask you to re-explain anything already in the thread.",
       },
       {
         id: "B",
-        title: "Service credit only",
-        saveRate: 41,
-        costLabel: "$150",
-        summary: "Apply credit without a lock-in conversation.",
+        title: "Apology call + 10% credit",
+        retentionLikelihood: 41,
+        discount: {
+          percent: 10,
+          label: "10% credit (~$96)",
+        },
+        summary: "Apply a 10% credit without a lock-in conversation.",
         steps: [
-          { text: "Apply $150 service credit" },
-          { text: "Confirm tickets still in queue" },
+          { text: "Offer 10% service credit if needed" },
+          { text: "Confirm tickets still owned and closing" },
         ],
       },
       {
         id: "C",
         title: "Watch and wait",
-        saveRate: 22,
-        costLabel: "risk $960",
+        retentionLikelihood: 22,
         riskEmphasis: true,
         summary: "Let tickets clear through normal queue.",
         steps: [
@@ -386,11 +512,13 @@ export const ACCOUNTS: Account[] = [
     id: "okafor",
     name: "Okafor Residence",
     email: "c.okafor@example.com",
+    phone: "(512) 555-0138",
     risk: "high",
     score: 58,
+    riskLabel: "High · public review may drive cancel",
     headline: "Okafor Residence left a public review.",
     summary:
-      "Negative review, sentiment risk. No recent contact — suggested: Problem Solve.",
+      "Okafor posted a negative public review after a poorly rated service visit. No one has followed up, making this early-tenure account especially vulnerable.",
     valueLabel: "$720",
     tenureLabel: "5mo",
     agent: null,
@@ -400,7 +528,25 @@ export const ACCOUNTS: Account[] = [
     mapLabel: "227 Willow Bend",
     address: "227 Willow Bend",
     mapNote: "Okafor Residence · $720/yr · 5 mo. Early tenure · public sentiment risk.",
+    fieldRoutesUrl: "https://fieldroutes.example.com/customers/okafor-227",
+    service: {
+      recentServiceCount: 2,
+      recentServiceWindowDays: 60,
+      daysSinceLastService: 27,
+      pestActivityNote:
+        "Post-visit survey and review cite roaches returning after service.",
+      contractCadence: "Monthly",
+      cadenceStatus: "on_track",
+      cadenceLabel: "On monthly cadence",
+    },
+    pestActivities: [{ pest: "roaches", activity: "high" }],
+    complaintSummary:
+      "Poor post-visit survey + negative public review; no outreach since.",
     why: [
+      {
+        date: "Current",
+        text: "High roach activity; customer reports pests returning after service",
+      },
       { date: "Jun 20", text: "Service visit scored poorly in post-visit survey" },
       { date: "Jun 27", text: "Negative public review published" },
       {
@@ -409,43 +555,44 @@ export const ACCOUNTS: Account[] = [
         emphasize: true,
       },
     ],
-    recommended: {
-      title: "Recovery visit + review response",
-      saveRate: 66,
-      costLabel: "$150",
-    },
+    recommendedPathId: "A",
     paths: [
       {
         id: "A",
-        title: "Recovery visit + review response",
-        saveRate: 66,
-        costLabel: "$150",
+        title: "Apology outreach + review response",
+        retentionLikelihood: 66,
         recommended: true,
-        summary: "Senior re-service plus a drafted public reply.",
+        summary:
+          "Personal apology call, draft public reply, and flag priority on the next scheduled visit — no complimentary re-service from this desk.",
         steps: [
-          { text: "Schedule senior tech re-service" },
-          { text: "Send personal apology note" },
+          { text: "Call within 24 hours with a personal apology" },
+          { text: "Send personal apology note / text follow-up" },
           { text: "Draft public review reply for approval" },
+          {
+            text: "Flag priority / context on next scheduled visit in FieldRoutes",
+          },
         ],
-        script:
+        conversationStarter:
           "I read your review before calling — you shouldn't have had to go public to get our attention, and I want to fix what went wrong.",
       },
       {
         id: "B",
-        title: "Credit + manager call",
-        saveRate: 45,
-        costLabel: "$220",
-        summary: "Manager apology with credit; no re-service yet.",
+        title: "Manager call + 10% credit",
+        retentionLikelihood: 45,
+        discount: {
+          percent: 10,
+          label: "10% credit (~$72)",
+        },
+        summary: "Manager apology with optional 10% credit.",
         steps: [
           { text: "Manager call within 24 hrs" },
-          { text: "Apply $220 credit" },
+          { text: "Offer 10% credit if needed" },
         ],
       },
       {
         id: "C",
         title: "Watch and wait",
-        saveRate: 19,
-        costLabel: "risk $720",
+        retentionLikelihood: 19,
         riskEmphasis: true,
         summary: "No outreach — monitor for further reviews.",
         steps: [
@@ -459,11 +606,13 @@ export const ACCOUNTS: Account[] = [
     id: "whitfield",
     name: "Whitfield Residence",
     email: "j.whitfield@example.com",
+    phone: "(512) 555-0171",
     risk: "moderate",
     score: 54,
+    riskLabel: "Moderate · price pushback at renewal",
     headline: "Whitfield Residence is pushing back on the price increase.",
     summary:
-      "Pricing pushback. Last contact Jun 29 — suggested: Appease.",
+      "Whitfield pushed back on the 8% renewal increase. Marcus last contacted them June 29, but the pricing concern is still unresolved.",
     valueLabel: "$1,420",
     tenureLabel: "19mo",
     agent: "Marcus Thompson",
@@ -474,7 +623,25 @@ export const ACCOUNTS: Account[] = [
     address: "55 Oak Hollow Dr",
     mapNote:
       "Whitfield Residence · $1,420/yr · 19 mo. Price sensitivity at renewal.",
+    fieldRoutesUrl: "https://fieldroutes.example.com/customers/whitfield-55",
+    service: {
+      recentServiceCount: 1,
+      recentServiceWindowDays: 90,
+      daysSinceLastService: 94,
+      pestActivityNote: "No active pest complaints in recent notes.",
+      contractCadence: "Quarterly",
+      cadenceStatus: "over_a_quarter",
+      cadenceLabel: "Over a quarter since last service",
+    },
+    pestActivities: [
+      { pest: "ants", activity: "low" },
+      { pest: "roaches", activity: "low" },
+    ],
     why: [
+      {
+        date: "Current",
+        text: "Over a quarter since last service",
+      },
       { date: "Jun 15", text: "Renewal notice included 8% price increase" },
       { date: "Jun 22", text: "Homeowner replied with pushback on increase" },
       {
@@ -483,44 +650,42 @@ export const ACCOUNTS: Account[] = [
         emphasize: true,
       },
     ],
-    recommended: {
-      title: "Hold rate + yard audit",
-      saveRate: 58,
-      costLabel: "$0 increase",
-    },
+    recommendedPathId: "A",
     paths: [
       {
         id: "A",
-        title: "Hold rate + yard audit",
-        saveRate: 58,
-        costLabel: "$0 increase",
+        title: "Hold rate + retention call",
+        retentionLikelihood: 58,
         recommended: true,
-        summary: "Freeze the increase and offer a complimentary yard audit.",
+        summary:
+          "Freeze the increase for two quarters and confirm in writing — Marcus owns the relationship. No complimentary field work.",
         steps: [
           { text: "Freeze increase for 2 quarters" },
-          { text: "Schedule complimentary yard audit" },
+          { text: "Confirm hold in writing" },
           { text: "Marcus owns the relationship going forward" },
         ],
-        script:
+        conversationStarter:
           "Marcus flagged your price-increase concern — I want to walk the numbers with you and find a hold that still works for both of us.",
       },
       {
         id: "B",
-        title: "Partial increase + credit",
-        saveRate: 44,
-        costLabel: "4% increase",
-        summary: "Meet in the middle at 4% with a one-time credit.",
+        title: "Partial increase + 10% one-time credit",
+        retentionLikelihood: 44,
+        discount: {
+          percent: 10,
+          label: "10% one-time credit (~$142)",
+        },
+        summary: "Meet in the middle at 4% with a one-time 10% credit.",
         steps: [
           { text: "Propose 4% increase" },
-          { text: "Apply one-time credit" },
+          { text: "Offer one-time 10% credit if needed" },
           { text: "Confirm in writing" },
         ],
       },
       {
         id: "C",
         title: "Proceed with increase",
-        saveRate: 28,
-        costLabel: "risk $1,420",
+        retentionLikelihood: 28,
         riskEmphasis: true,
         summary: "Hold the 8% increase and document the decision.",
         steps: [
@@ -534,11 +699,13 @@ export const ACCOUNTS: Account[] = [
     id: "chen",
     name: "Chen Residence",
     email: "l.chen@example.com",
+    phone: "(512) 555-0126",
     risk: "moderate",
     score: 49,
+    riskLabel: "Moderate · early tenure watch",
     headline: "Chen Residence hit a service issue in month 3.",
     summary:
-      "Early tenure service issues. Suggested action: Do Nothing — watch for now.",
+      "Chen reported an issue after only their second service visit. The signal is moderate, but an early check-in could keep a small concern from becoming a cancellation.",
     valueLabel: "$540",
     tenureLabel: "3mo",
     agent: null,
@@ -548,7 +715,23 @@ export const ACCOUNTS: Account[] = [
     mapLabel: "802 Ridgeview Ct",
     address: "802 Ridgeview Ct",
     mapNote: "Chen Residence · $540/yr · 3 mo. Early tenure · single service issue.",
+    fieldRoutesUrl: "https://fieldroutes.example.com/customers/chen-802",
+    service: {
+      recentServiceCount: 2,
+      recentServiceWindowDays: 90,
+      daysSinceLastService: 26,
+      pestActivityNote:
+        "Second-visit note: ants near foundation; customer asked a few questions.",
+      contractCadence: "Quarterly",
+      cadenceStatus: "on_track",
+      cadenceLabel: "On quarterly cadence",
+    },
+    pestActivities: [{ pest: "ants", activity: "moderate" }],
     why: [
+      {
+        date: "Current",
+        text: "Moderate ant activity near the foundation noted on the second visit",
+      },
       { date: "Jun 08", text: "Onboarded — quarterly residential plan" },
       { date: "Jun 21", text: "Service issue flagged on second visit" },
       {
@@ -557,43 +740,39 @@ export const ACCOUNTS: Account[] = [
         emphasize: true,
       },
     ],
-    recommended: {
-      title: "Light check-in text",
-      saveRate: 42,
-      costLabel: "$0",
-    },
+    recommendedPathId: "A",
     paths: [
       {
         id: "A",
         title: "Light check-in text",
-        saveRate: 42,
-        costLabel: "$0",
+        retentionLikelihood: 42,
         recommended: true,
-        summary: "One personal check-in — no credit unless they ask.",
+        summary:
+          "One personal check-in — document the concern and help with the next regular visit. No credit unless they ask.",
         steps: [
           { text: "Send one personal check-in text" },
-          { text: "Offer optional re-inspect" },
-          { text: "No credit unless requested" },
+          { text: "Document their concern in FieldRoutes notes" },
+          {
+            text: "Offer scheduling help for the next regular visit",
+          },
         ],
-        script:
+        conversationStarter:
           "I noticed the service note from your second visit — checking in early so a small issue doesn't become the reason you leave.",
       },
       {
         id: "B",
-        title: "Complimentary re-inspect",
-        saveRate: 51,
-        costLabel: "$95",
-        summary: "Proactive free re-inspect before they ask.",
+        title: "Manager check-in call",
+        retentionLikelihood: 51,
+        summary: "Proactive manager call — no complimentary re-inspect.",
         steps: [
-          { text: "Schedule complimentary re-inspect" },
-          { text: "Confirm window by text" },
+          { text: "Manager check-in call within 48 hrs" },
+          { text: "Confirm next scheduled visit works for them" },
         ],
       },
       {
         id: "C",
         title: "Do nothing",
-        saveRate: 35,
-        costLabel: "watch only",
+        retentionLikelihood: 35,
         summary: "Leave in watch — model says no outreach yet.",
         steps: [
           { text: "Keep in watch queue" },

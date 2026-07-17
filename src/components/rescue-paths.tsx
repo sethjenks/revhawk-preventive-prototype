@@ -1,21 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { CalendarClock, CalendarPlus, Check, Phone } from "lucide-react";
-import { pathCtaLabel, type RescuePath } from "@/lib/accounts";
+import { CalendarClock, Check, FileText } from "lucide-react";
+import {
+  pathCtaLabel,
+  retentionLikelihoodLabel,
+  type Account,
+  type RescuePath,
+} from "@/lib/accounts";
+import {
+  composeFieldRoutesNote,
+  FOLLOW_UP_OPTIONS,
+  type FollowUpIn,
+} from "@/lib/fieldroutes-note";
 import { PATHS } from "@/lib/rescue-card.storyboard";
 import { Button } from "@/components/ui/button";
+import { FieldRoutesNotePreview } from "@/components/fieldroutes-note-preview";
 import { cn } from "@/lib/utils";
 
-export type ResurfaceIn = "1d" | "3d" | "7d" | "14d";
-
-const RESURFACE_OPTIONS: { value: ResurfaceIn; label: string }[] = [
-  { value: "1d", label: "Tomorrow" },
-  { value: "3d", label: "In 3 days" },
-  { value: "7d", label: "In 7 days" },
-  { value: "14d", label: "In 14 days" },
-];
+export type { FollowUpIn };
 
 type StepState = {
   done: boolean;
@@ -23,33 +27,35 @@ type StepState = {
 };
 
 type RescuePathsProps = {
+  account: Account;
   paths: RescuePath[];
   selectedId: RescuePath["id"] | null;
   startedId: RescuePath["id"] | null;
   onSelect: (id: RescuePath["id"]) => void;
   onStart: (id: RescuePath["id"]) => void;
   onBack: () => void;
-  onLogOutreach: (id: RescuePath["id"]) => void;
+  onSaveNote: (id: RescuePath["id"], noteText: string) => void;
   onSkip: (id: RescuePath["id"]) => void;
-  onNoteAndResurface: (
+  onNoteAndFollowUp: (
     id: RescuePath["id"],
-    note: string,
-    resurfaceIn: ResurfaceIn,
+    noteText: string,
+    followUpIn: FollowUpIn,
   ) => void;
   visible: boolean;
   stagger?: number;
 };
 
 export function RescuePaths({
+  account,
   paths,
   selectedId,
   startedId,
   onSelect,
   onStart,
   onBack,
-  onLogOutreach,
+  onSaveNote,
   onSkip,
-  onNoteAndResurface,
+  onNoteAndFollowUp,
   visible,
   stagger = PATHS.stagger,
 }: RescuePathsProps) {
@@ -60,26 +66,58 @@ export function RescuePaths({
     pathId: RescuePath["id"];
     index: number;
   } | null>(null);
-  const [showResurface, setShowResurface] = useState(false);
-  const [resurfaceNote, setResurfaceNote] = useState("");
-  const [resurfaceIn, setResurfaceIn] = useState<ResurfaceIn>("7d");
+  const [showFollowUp, setShowFollowUp] = useState(false);
+  const [followUpNote, setFollowUpNote] = useState("");
+  const [followUpIn, setFollowUpIn] = useState<FollowUpIn>("7d");
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewMode, setPreviewMode] = useState<"save" | "followUp">("save");
+  const [trackedStartedId, setTrackedStartedId] = useState(startedId);
 
-  useEffect(() => {
-    if (!startedId) {
-      setShowResurface(false);
-      setExpandedStep(null);
-      return;
+  if (startedId !== trackedStartedId) {
+    setTrackedStartedId(startedId);
+    setShowFollowUp(false);
+    setExpandedStep(null);
+    setPreviewOpen(false);
+    if (startedId) {
+      const path = paths.find((p) => p.id === startedId);
+      if (path?.steps) {
+        setStepsByPath((prev) => {
+          if (prev[startedId]?.length === path.steps!.length) return prev;
+          return {
+            ...prev,
+            [startedId]: path.steps!.map(() => ({ done: false, note: "" })),
+          };
+        });
+      }
     }
-    const path = paths.find((p) => p.id === startedId);
-    if (!path?.steps) return;
-    setStepsByPath((prev) => {
-      if (prev[startedId]?.length === path.steps!.length) return prev;
-      return {
-        ...prev,
-        [startedId]: path.steps!.map(() => ({ done: false, note: "" })),
-      };
+  }
+
+  const startedPath = paths.find((p) => p.id === startedId) ?? null;
+
+  const previewText = useMemo(() => {
+    if (!startedPath || !startedId) return "";
+    const stepStates = stepsByPath[startedId] ?? [];
+    return composeFieldRoutesNote({
+      account,
+      path: startedPath,
+      steps: (startedPath.steps ?? []).map((step, i) => ({
+        text: step.text,
+        done: stepStates[i]?.done ?? false,
+        note: stepStates[i]?.note ?? "",
+      })),
+      followUpIn: previewMode === "followUp" ? followUpIn : undefined,
+      followUpNote:
+        previewMode === "followUp" ? followUpNote.trim() : undefined,
     });
-  }, [startedId, paths]);
+  }, [
+    account,
+    startedPath,
+    startedId,
+    stepsByPath,
+    previewMode,
+    followUpIn,
+    followUpNote,
+  ]);
 
   const updateStep = (
     pathId: RescuePath["id"],
@@ -100,6 +138,29 @@ export function RescuePaths({
     setExpandedStep(null);
   };
 
+  const openSavePreview = () => {
+    setPreviewMode("save");
+    setPreviewOpen(true);
+  };
+
+  const openFollowUpPreview = () => {
+    setPreviewMode("followUp");
+    setPreviewOpen(true);
+  };
+
+  const handleConfirmPreview = (noteText: string) => {
+    if (!startedId) return;
+    setPreviewOpen(false);
+    if (previewMode === "followUp") {
+      onNoteAndFollowUp(startedId, noteText, followUpIn);
+      setShowFollowUp(false);
+      setFollowUpNote("");
+      setFollowUpIn("7d");
+      return;
+    }
+    onSaveNote(startedId, noteText);
+  };
+
   return (
     <div className="flex w-full flex-col gap-1.5 pt-1">
       <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-[var(--text-tertiary)]">
@@ -109,12 +170,8 @@ export function RescuePaths({
         const selected = selectedId === path.id;
         const started = startedId === path.id;
         const recommended = Boolean(path.recommended);
-        const stepStates = stepsByPath[path.id] ?? [];
-        const schedulesCheckIn = Boolean(
-          path.steps?.some((step) => step.schedulesCheckIn),
-        );
+        const pathStepStates = stepsByPath[path.id] ?? [];
         const ctaLabel = pathCtaLabel(path);
-        const CtaIcon = schedulesCheckIn ? CalendarPlus : Phone;
 
         return (
           <motion.div
@@ -139,7 +196,7 @@ export function RescuePaths({
               onClick={() => onSelect(path.id)}
               className={
                 selected
-                  ? "flex w-full items-baseline justify-between gap-3 text-left"
+                  ? "flex w-full flex-col gap-1 text-left"
                   : "flex w-full flex-row items-center gap-3 px-2.5 py-2.5 text-left"
               }
             >
@@ -152,11 +209,12 @@ export function RescuePaths({
                   <span
                     className={
                       path.riskEmphasis
-                        ? "shrink-0 text-xs font-bold text-destructive"
-                        : "shrink-0 text-xs font-bold text-primary"
+                        ? "text-xs font-semibold text-destructive"
+                        : "text-xs font-semibold text-primary"
                     }
                   >
-                    {path.saveRate}% · {path.costLabel}
+                    {retentionLikelihoodLabel(path.retentionLikelihood)}
+                    {path.discount ? ` · ${path.discount.label}` : ""}
                   </span>
                 </>
               ) : (
@@ -171,6 +229,9 @@ export function RescuePaths({
                         · recommended
                       </span>
                     ) : null}
+                  </span>
+                  <span className="shrink-0 text-[11px] font-semibold text-muted-foreground">
+                    {path.retentionLikelihood}%
                   </span>
                 </>
               )}
@@ -216,21 +277,36 @@ export function RescuePaths({
                   className="overflow-hidden"
                 >
                   <div className="flex flex-col gap-3.5">
+                    {path.conversationStarter ? (
+                      <div className="rounded-lg border border-border/80 bg-accent px-3.5 py-3">
+                        <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+                          Conversation starter
+                        </span>
+                        <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">
+                          Example — adapt in your own words
+                        </p>
+                        <p className="text-[13px] leading-[19px] text-foreground">
+                          “{path.conversationStarter}”
+                        </p>
+                      </div>
+                    ) : null}
+
                     {path.steps && path.steps.length > 0 ? (
                       <div className="flex flex-col gap-1.5">
                         <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-                          Steps
+                          Checklist
                         </span>
+                        <p className="text-[11px] leading-[16px] text-muted-foreground">
+                          Check items off as you go — notes feed the FieldRoutes
+                          preview.
+                        </p>
                         <ul className="flex flex-col gap-2">
                           {path.steps.map((rawStep, index) => {
-                            const label =
-                              typeof rawStep === "string"
-                                ? rawStep
-                                : (rawStep.text ?? "");
-                            const schedulesThisCheckIn =
-                              typeof rawStep !== "string" &&
-                              Boolean(rawStep.schedulesCheckIn);
-                            const state = stepStates[index] ?? {
+                            const label = rawStep.text;
+                            const schedulesThisCheckIn = Boolean(
+                              rawStep.schedulesCheckIn,
+                            );
+                            const state = pathStepStates[index] ?? {
                               done: false,
                               note: "",
                             };
@@ -291,21 +367,17 @@ export function RescuePaths({
                                     >
                                       <span
                                         className={cn(
-                                          "block text-[13px] font-medium leading-[19px]",
+                                          "block text-[13px] font-medium leading-[19px] text-foreground",
                                           state.done &&
                                             "line-through opacity-70",
                                         )}
-                                        style={{ color: "#13181B" }}
                                       >
                                         {label || `Step ${index + 1}`}
                                       </span>
                                     </button>
                                     {schedulesThisCheckIn && !state.done ? (
-                                      <p
-                                        className="mt-0.5 text-[11px] font-medium"
-                                        style={{ color: "#07CF7C" }}
-                                      >
-                                        Included when you log outreach
+                                      <p className="mt-0.5 text-[11px] font-medium text-primary">
+                                        Included when you save the note
                                       </p>
                                     ) : null}
                                     {state.done && state.note ? (
@@ -336,8 +408,7 @@ export function RescuePaths({
                                               }
                                               placeholder="Add your notes before marking this done…"
                                               rows={2}
-                                              className="w-full resize-none rounded-md border border-border bg-white px-3 py-2 text-[13px] leading-[18px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
-                                              style={{ color: "#13181B" }}
+                                              className="w-full resize-none rounded-md border border-border bg-white px-3 py-2 text-[13px] leading-[18px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
                                             />
                                             <div className="flex items-center gap-2">
                                               <Button
@@ -373,19 +444,8 @@ export function RescuePaths({
                       </div>
                     ) : null}
 
-                    {path.script ? (
-                      <div className="rounded-lg border border-border/80 bg-card px-3.5 py-3">
-                        <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-                          Opening script
-                        </span>
-                        <p className="text-[13px] leading-[19px] text-foreground">
-                          “{path.script}”
-                        </p>
-                      </div>
-                    ) : null}
-
                     <AnimatePresence initial={false}>
-                      {showResurface ? (
+                      {showFollowUp ? (
                         <motion.div
                           initial={{ opacity: 0, height: 0 }}
                           animate={{ opacity: 1, height: "auto" }}
@@ -395,28 +455,28 @@ export function RescuePaths({
                         >
                           <div className="flex flex-col gap-3 rounded-lg border border-border bg-card px-3.5 py-3">
                             <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-                              Note & resurface
+                              Save note & follow up later
                             </span>
                             <textarea
-                              value={resurfaceNote}
-                              onChange={(e) => setResurfaceNote(e.target.value)}
+                              value={followUpNote}
+                              onChange={(e) => setFollowUpNote(e.target.value)}
                               placeholder="What should the next person know when this comes back?"
                               rows={3}
                               className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-[13px] leading-[18px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
                             />
                             <div className="flex flex-col gap-1.5">
                               <span className="text-xs font-medium text-muted-foreground">
-                                Resurface
+                                Follow up
                               </span>
                               <div className="flex flex-wrap gap-1.5">
-                                {RESURFACE_OPTIONS.map((option) => (
+                                {FOLLOW_UP_OPTIONS.map((option) => (
                                   <button
                                     key={option.value}
                                     type="button"
-                                    onClick={() => setResurfaceIn(option.value)}
+                                    onClick={() => setFollowUpIn(option.value)}
                                     className={cn(
                                       "rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors",
-                                      resurfaceIn === option.value
+                                      followUpIn === option.value
                                         ? "border-primary/40 bg-[var(--mint-bg)] text-foreground"
                                         : "border-border bg-background text-muted-foreground hover:text-foreground",
                                     )}
@@ -430,27 +490,18 @@ export function RescuePaths({
                               <Button
                                 type="button"
                                 size="sm"
-                                onClick={() => {
-                                  onNoteAndResurface(
-                                    path.id,
-                                    resurfaceNote.trim(),
-                                    resurfaceIn,
-                                  );
-                                  setShowResurface(false);
-                                  setResurfaceNote("");
-                                  setResurfaceIn("7d");
-                                }}
+                                onClick={openFollowUpPreview}
                                 className="h-9 gap-1.5 px-3.5 text-[13px] font-semibold"
                               >
                                 <CalendarClock
                                   className="size-3.5"
                                   strokeWidth={2.25}
                                 />
-                                Save & resurface
+                                Preview & schedule follow-up
                               </Button>
                               <button
                                 type="button"
-                                onClick={() => setShowResurface(false)}
+                                onClick={() => setShowFollowUp(false)}
                                 className="px-2 text-[13px] font-medium text-muted-foreground underline-offset-2 hover:underline"
                               >
                                 Cancel
@@ -465,24 +516,24 @@ export function RescuePaths({
                       <Button
                         type="button"
                         size="sm"
-                        onClick={() => onLogOutreach(path.id)}
+                        onClick={openSavePreview}
                         className="h-9 gap-1.5 px-3.5 text-[13px] font-semibold"
                       >
-                        <CtaIcon className="size-3.5" strokeWidth={2.25} />
+                        <FileText className="size-3.5" strokeWidth={2.25} />
                         {ctaLabel}
                       </Button>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => setShowResurface((v) => !v)}
+                        onClick={() => setShowFollowUp((v) => !v)}
                         className="h-9 gap-1.5 border-border bg-card px-3.5 text-[13px] font-semibold"
                       >
                         <CalendarClock
                           className="size-3.5"
                           strokeWidth={2.25}
                         />
-                        Note & resurface
+                        Save note & follow up later
                       </Button>
                       <Button
                         type="button"
@@ -508,6 +559,14 @@ export function RescuePaths({
           </motion.div>
         );
       })}
+
+      <FieldRoutesNotePreview
+        open={previewOpen}
+        initialText={previewText}
+        accountName={account.name}
+        onOpenChange={setPreviewOpen}
+        onConfirm={handleConfirmPreview}
+      />
     </div>
   );
 }
